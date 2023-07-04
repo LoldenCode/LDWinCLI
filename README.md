@@ -1,4 +1,18 @@
-LDWin
+LDWinCLI
+
+## A semi-modernized port of LDWin in PowerShell
+
+### What does this do differently?
+Using this ported Powershell script, this can be ran on an endpoint via RMM or other application execution tool. While in WIP phase, it is building out one or multiple PSCustomObjects, then writing the contents to a file in the same directory, named `LLDP_raw.txt`.
+
+There are some quality of life improvements, including natively excluding inactive NICs, and having the prebuilt Object to manipulate for further API integrations.
+
+### What's next?
+I'm planning on working this into Luke Whitelock's [HuduAPI](https://github.com/lwhitelock/HuduAPI) as a Proof of Concept, but intend to keep the pieces separated so this can be integrated with any sort of documentation system that you are using. The data this pulls should allow building an accurate map correlating any device moves, locating mislabeled cable drops, and even assist with the initial onboarding of a new client, or jumping into a new client that's poorly documented.
+
+**Currently, only LLDP is integrated. I am planning on porting the CDP features over in the coming days.**
+
+## Original README below:
 =====
 
 ## Link Discovery Client for Windows
