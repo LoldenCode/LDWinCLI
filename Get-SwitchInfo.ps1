@@ -92,6 +92,22 @@ Function Get-ValidNetworkInterface {
     }
 }
 
+function Save-Testfile {
+    param (
+        [Parameter(Mandatory = $False, Position = 0, ValueFromPipeline = $false)]
+        [switch] $debugMode = $False
+    )
+    if ($debugMode) {
+        return $netinfo | Out-File $filepath -Append
+    }
+    # else {
+    #     $retval = Continue
+    # }
+
+    # return $retval
+
+}
+
 $ErrorActionPreference = "Stop";
 
 <############
@@ -105,62 +121,83 @@ $Adapter = Get-ValidNetworkInterface
 $tempGUID = $Adapter.SetID
 
 # Check for temp output file
-if (Test-Path -Path $filepath -PathType Leaf) {
-    $title = "Remove prior log"
-    $question = "You have an existing log from this app. Would you like to delete it and overwrite it?"
-    $choices = "&Yes", "&No"
-    $decision = $Host.UI.PromptForChoice($title, $question, $choices, 0)
-    if ($decision -eq 0) {
-        Remove-item $filepath -Force
-    }
-    else {
-        exit 1
+if ($debugMode) {
+    if (Test-Path -Path $filepath -PathType Leaf) {
+        $title = "Remove prior log"
+        $question = "You have an existing log from this app. Would you like to delete it and overwrite it?"
+        $choices = "&Yes", "&No"
+        $decision = $Host.UI.PromptForChoice($title, $question, $choices, 0)
+        if ($decision -eq 0) {
+            Remove-item $filepath -Force
+        }
+        else {
+            exit 1
+        }
     }
 }
 
 if ($tempGUID -is [array]) {
-    $i = 0
+    $i = -1
     ForEach ($conn in $tempGUID) {
-        #Write-host $conn
+        ++$i
         $job = Start-Job -inputobject $pwd -Name $conn -ScriptBlock {
             param($conn)
             cmd /c "$input\tcpdump.exe -i \Device\$conn -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
-          } -ArgumentList $conn
-        Start-Sleep 30
-        While (Get-Job -State "Running") {
-            Get-Job
+        } -ArgumentList $conn
+        Start-Sleep 20
+        :OutOfLoop_BadNIC While (Get-Job -State "Running") {
             Start-Sleep 10
             if (Get-Job -State "Running" -ErrorAction:SilentlyContinue) {
-                if (test-path -Path $filepath -PathType Leaf) {
-                   Add-Content -Path $filepath -value "The network adapter could not be properly enumerated" 
-                }
-                Break
+                Taskkill /IM "tcpdump.exe" /F >$null 2>&1
+                break OutOfLoop_BadNIC
             }
         }
         $cmdOutput = Receive-Job $job
-        Remove-Job $job
-          
-        $netinfo = [PSCustomObject]@{
-            SwitchName     = ($cmdOutput -match "System Name TLV" -split ": ")[1]
-            Interface      = ($cmdOutput -match "Subtype Interface Name" -split ": ")[1]
-            SwitchMac      = ($cmdOutput -match "Subtype MAC address" -split "\): ")[1]
-            SwitchPort     = ($cmdOutput -match "Port ID TLV" -split ": ")[1]
-            SwitchPort2    = ($cmdOutput -match "Port Description TLV" -split ": ")[1]
-            VLAN           = ($cmdOutput -match "port vlan id" -split ": ")[1]
-            SwitchIP       = ($cmdOutput -match "Management Address len" -split ": ")[1]
-            SwitchModel    = (($cmdOutput[(($cmdOutput | Out-String).Split("`n") | Select-String "System Description TLV").linenumber])).Trim()
-            LocalIPaddress = $Adapter[$i].IPAddr
-            LocalMAC       = $Adapter[$i].Maddr
-            LocalNic       = $Adapter[$i].Desc
+        Remove-Job $job -Force
+        try {  
+            $netinfo = [PSCustomObject]@{
+                Hostname       = [System.Net.Dns]::GetHostName()
+                SwitchName     = ($cmdOutput -match "System Name TLV" -split ": ")[1]
+                Interface      = ($cmdOutput -match "Subtype Interface Name" -split ": ")[1]
+                SwitchMac      = ($cmdOutput -match "Subtype MAC address" -split "\): ")[1]
+                SwitchPort     = ($cmdOutput -match "Port ID TLV" -split ": ")[1]
+                SwitchPort2    = ($cmdOutput -match "Port Description TLV" -split ": ")[1]
+                VLAN           = ($cmdOutput -match "port vlan id" -split ": ")[1]
+                SwitchIP       = ($cmdOutput -match "Management Address len" -split ": ")[1]
+                SwitchModel    = (($cmdOutput[(($cmdOutput | Out-String).Split("`n") | Select-String "System Description TLV").linenumber])).Trim()
+                LocalIPaddress = $Adapter[$i].IPAddr
+                LocalMAC       = $Adapter[$i].Maddr
+                LocalNic       = $Adapter[$i].Desc
+            }
         }
-        $netinfo | Out-File $filepath -Append
-        $i++
+        catch { Write-Host "Unable to build information for $($Adapter[$i])" }
+        return $netinfo
+        Save-Testfile
     }
 }
 else {
+    $job = Start-Job -inputobject $pwd -Name $tempGUID -ScriptBlock {
+        param($tempGUID)
+        cmd /c "$input\tcpdump.exe -i \Device\$tempGUID -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
+    } -ArgumentList $tempGUID
+    Start-Sleep 20
+    :OutOfLoop_BadNICSolo While (Get-Job -State "Running") {
+        Start-Sleep 10
+        if (Get-Job -State "Running" -ErrorAction:SilentlyContinue) {
+            Taskkill /IM "tcpdump.exe" /F >$null 2>&1
+            if (test-path -Path $filepath -PathType Leaf) {
+                Write-Host "Network adapter $($Adapter) failed to reply in a timely manner." 
+            }
+            Break OutOfLoop_BadNICSolo
+        }
+    }
+    $cmdOutput = Receive-Job $job
+    Remove-Job $job -Force
+    
     $cmdOutput = cmd /c ".\tcpdump.exe -i \Device\$tempGuid -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
     # LLDP
     $netinfo = [PSCustomObject]@{
+        Hostname       = [System.Net.Dns]::GetHostName()
         SwitchName     = ($cmdOutput -match "System Name TLV" -split ": ")[1]
         Interface      = ($cmdOutput -match "Subtype Interface Name" -split ": ")[1]
         SwitchMac      = ($cmdOutput -match "Subtype MAC address" -split "\): ")[1]
@@ -173,5 +210,6 @@ else {
         LocalMAC       = $Adapter.Maddr
         LocalNic       = $Adapter.Desc
     }
-    $netinfo | Out-File $filepath
+    return $netinfo
+    Save-Testfile
 }

@@ -1,7 +1,7 @@
 LDWinCLI
 
 ## A semi-modernized port of LDWin in PowerShell
-
+<img src="https://github.com/LoldenCode/LDWinCLI/blob/master/PowershellOutput.png" />
 ### What does this do differently?
 Using this ported Powershell script, this can be ran on an endpoint via RMM or other application execution tool. While in WIP phase, it is building out one or multiple PSCustomObjects, then writing the contents to a file in the same directory, named `LLDP_raw.txt`.
 
