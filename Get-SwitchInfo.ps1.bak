@@ -17,15 +17,6 @@
 
 
 #>
-    param(
-        [Parameter(
-        Mandatory = $false,
-        ValueFromPipeline = $true,
-        ValueFromPipelineByPropertyName = $true)]
-        [Alias('CN', 'Computer')]
-        [String[]]$ComputerName = $env:COMPUTERNAME
-    )
-    #Write-Host $ComputerName
 
 <###########
   Classes
@@ -1147,16 +1138,90 @@ function ConvertFrom-LLDPPacket {
 <############
   Script
 ############>
-Write-Host $ComputerName
 
-if ($ComputerName.count -eq 0) {
-    Write-Host "Something broke"
-}
-elseif (($ComputerName.count -eq 1) -AND ($ComputerName -eq $env:COMPUTERNAME)) {
-    #Running Locally
-    Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
+
+Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
+<#
+$Adapter = Get-ValidNetworkInterface
+$tempGUID = $Adapter.SetID
+
+# Check for temp output file
+
+if ($tempGUID -is [array]) {
+    $i = -1
+    ForEach ($conn in $tempGUID) {
+        ++$i
+        $job = Start-Job -inputobject $pwd -Name $conn -ScriptBlock {
+            param($conn)
+            cmd /c "$input\tcpdump.exe -i \Device\$conn -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
+        } -ArgumentList $conn
+        Start-Sleep 20
+        :OutOfLoop_BadNIC While (Get-Job -State "Running") {
+            Start-Sleep 10
+            if (Get-Job -State "Running" -ErrorAction:SilentlyContinue) {
+                Taskkill /IM "tcpdump.exe" /F >$null 2>&1
+                break OutOfLoop_BadNIC
+            }
+        }
+        $cmdOutput = Receive-Job $job
+        Remove-Job $job -Force
+        try {  
+            $netinfo = [PSCustomObject]@{
+                Hostname       = [System.Net.Dns]::GetHostName()
+                SwitchName     = ($cmdOutput -match "System Name TLV" -split ": ")[1]
+                Interface      = ($cmdOutput -match "Subtype Interface Name" -split ": ")[1]
+                SwitchMac      = ($cmdOutput -match "Subtype MAC address" -split "\): ")[1]
+                SwitchPort     = ($cmdOutput -match "Port ID TLV" -split ": ")[1]
+                SwitchPort2    = ($cmdOutput -match "Port Description TLV" -split ": ")[1]
+                VLAN           = ($cmdOutput -match "port vlan id" -split ": ")[1]
+                SwitchIP       = ($cmdOutput -match "Management Address len" -split ": ")[1]
+                SwitchModel    = (($cmdOutput[(($cmdOutput | Out-String).Split("`n") | Select-String "System Description TLV").linenumber])).Trim()
+                LocalIPaddress = $Adapter[$i].IPAddr
+                LocalMAC       = $Adapter[$i].Maddr
+                LocalNic       = $Adapter[$i].Desc
+            }
+        }
+        catch { Write-Host "Unable to build information for $($Adapter[$i])" }
+        return $netinfo
+        Save-Testfile
+    }
 }
 else {
-    #Multiple PCs
-    $ComputerName | Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
+    $job = Start-Job -inputobject $pwd -Name $tempGUID -ScriptBlock {
+        param($tempGUID)
+        cmd /c "$input\tcpdump.exe -i \Device\$tempGUID -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
+    } -ArgumentList $tempGUID
+    Start-Sleep 20
+    :OutOfLoop_BadNICSolo While (Get-Job -State "Running") {
+        Start-Sleep 10
+        if (Get-Job -State "Running" -ErrorAction:SilentlyContinue) {
+            Taskkill /IM "tcpdump.exe" /F >$null 2>&1
+            if (test-path -Path $filepath -PathType Leaf) {
+                Write-Host "Network adapter $($Adapter) failed to reply in a timely manner." 
+            }
+            Break OutOfLoop_BadNICSolo
+        }
+    }
+    $cmdOutput = Receive-Job $job
+    Remove-Job $job -Force
+    
+    $cmdOutput = cmd /c ".\tcpdump.exe -i \Device\$tempGuid -nn -v -s 1500 -c 1 (ether[12:2]==0x88cc or ether[20:2]==0x2000)" '2> nul'
+    # LLDP
+    $netinfo = [PSCustomObject]@{
+        Hostname       = [System.Net.Dns]::GetHostName()
+        SwitchName     = ($cmdOutput -match "System Name TLV" -split ": ")[1]
+        Interface      = ($cmdOutput -match "Subtype Interface Name" -split ": ")[1]
+        SwitchMac      = ($cmdOutput -match "Subtype MAC address" -split "\): ")[1]
+        SwitchPort     = ($cmdOutput -match "Port ID TLV" -split ": ")[1]
+        SwitchPort2    = ($cmdOutput -match "Port Description TLV" -split ": ")[1]
+        VLAN           = ($cmdOutput -match "port vlan id" -split ": ")[1]
+        SwitchIP       = ($cmdOutput -match "Management Address len" -split ": ")[1]
+        SwitchModel    = (($cmdOutput[(($cmdOutput | Out-String).Split("`n") | Select-String "System Description TLV").linenumber])).Trim()
+        LocalIPaddress = $Adapter.IPAddr
+        LocalMAC       = $Adapter.Maddr
+        LocalNic       = $Adapter.Desc
+    }
+    return $netinfo
+    Save-Testfile
 }
+#>
