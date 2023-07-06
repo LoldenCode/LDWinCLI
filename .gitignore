@@ -11,3 +11,5 @@ tcpdump.exe
 tcpdump.exe
 Get-SwitchInfoIndev.ps1
 PSDiscoveryProtocol.psm1
+testMap.csv
+testMapNti.csv

@@ -77,14 +77,6 @@ class DiscoveryProtocolPacket {
 <############
   Functions
 ############>
-function Test-Administrator {  
-    [OutputType([bool])]
-    param()
-    process {
-        [Security.Principal.WindowsPrincipal]$user = [Security.Principal.WindowsIdentity]::GetCurrent();
-        return $user.IsInRole([Security.Principal.WindowsBuiltinRole]::Administrator);
-    }
-}
 function Invoke-DiscoveryProtocolCapture {
 
     <#
