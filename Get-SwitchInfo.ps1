@@ -77,6 +77,7 @@ class DiscoveryProtocolPacket {
 <############
   Functions
 ############>
+
 function Invoke-DiscoveryProtocolCapture {
 
     <#
@@ -279,8 +280,14 @@ function Invoke-DiscoveryProtocolCapture {
                 }
                 catch [Microsoft.Management.Infrastructure.CimException] {
                     if ($_.Exception.NativeErrorCode -eq 'AlreadyExists') {
-                        $Message = "Another NetEventSession already exists. Run Invoke-DiscoveryProtocolCapture with -Force switch to remove existing NetEventSessions."
+                        $Message = "Another NetEventSession already exists. Re-running with -Force switch to remove existing NetEventSessions."
                         Write-Error -Message $Message
+                        Get-NetEventSession @CimSession | ForEach-Object {
+                            if ($_.SessionStatus -eq 'Running') {
+                                $_ | Stop-NetEventSession @CimSession
+                            }
+                            $_ | Remove-NetEventSession @CimSession
+                        }
                     }
                     else {
                         Write-Error -ErrorRecord $_
@@ -1139,7 +1146,6 @@ function ConvertFrom-LLDPPacket {
 <############
   Script
 ############>
-Write-Host $ComputerName
 
 if ($ComputerName.count -eq 0) {
     Write-Host "Something broke"
@@ -1150,5 +1156,10 @@ elseif (($ComputerName.count -eq 1) -AND ($ComputerName -eq $env:COMPUTERNAME)) 
 }
 else {
     #Multiple PCs
-    $ComputerName | Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
+    if (([version](Get-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\PowerShell\3\PowerShellEngine -Name 'PowerShellVersion').PowerShellVersion).major -ge 7) {
+        $ComputerName | ForEach-Object -Parallel { Invoke-DiscoveryProtocolCapture -CompouterName $_ | Get-DiscoveryProtocolData}
+    }
+    else {
+        $ComputerName | Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
+    }
 }
