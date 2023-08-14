@@ -152,7 +152,7 @@ function Invoke-DiscoveryProtocolCapture {
             Position = 0)]
         [Parameter(ParameterSetName = 'RemoteCapture',
             Position = 1)]
-        [Int16]$Duration = $(if ($Type -eq 'LLDP') { 32 } else { 62 }),
+        [Int16]$Duration = $(if ($Type -eq 'LLDP') { 120 } else { 62 }),
 
         [Parameter(ParameterSetName = 'LocalCapture',
             Position = 1)]
@@ -1157,7 +1157,7 @@ elseif (($ComputerName.count -eq 1) -AND ($ComputerName -eq $env:COMPUTERNAME)) 
 else {
     #Multiple PCs
     if (([version](Get-ItemProperty -Path HKLM:\SOFTWARE\Microsoft\PowerShell\3\PowerShellEngine -Name 'PowerShellVersion').PowerShellVersion).major -ge 7) {
-        $ComputerName | ForEach-Object -Parallel { Invoke-DiscoveryProtocolCapture -CompouterName $_ | Get-DiscoveryProtocolData}
+        $ComputerName | ForEach-Object -Parallel { Invoke-DiscoveryProtocolCapture -ComputerName $_ -Type LLDP | Get-DiscoveryProtocolData}
     }
     else {
         $ComputerName | Invoke-DiscoveryProtocolCapture | Get-DiscoveryProtocolData
